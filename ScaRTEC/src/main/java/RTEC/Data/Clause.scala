@@ -201,9 +201,19 @@ case class RelativeComplementAll(baseInput: String, excludedInput: Seq[String], 
   override def replaceLabel(target: String, newLabel: String): RelativeComplementAll = this
 }
 
+case class RemoveDuplicates(id1: String, id2: String) extends BodyClause {
+  override def replaceLabel(target: String, newLabel: String): RemoveDuplicates = this
+
+  override def resolve(data: EventDB, dict: Iterable[(Seq[String], Map[String, String], Map[String, Intervals], Map[String, Set[Int]])]): Iterable[(Seq[String], Map[String, String], Map[String, Intervals], Map[String, Set[Int]])] = {
+    dict.filter {
+      x =>
+        x._1.head != x._1(1)
+    }
+  }
+}
+
 /* ====================== Maritime Domain ====================== */
 
-// resolves predicate NearPorts. Filters vessels that are not near ports
 case class NotNearPorts(lon: String, lat: String) extends BodyClause {
   override def replaceLabel(target: String, newLabel: String): NotNearPorts = this
 
@@ -221,7 +231,6 @@ case class NotNearPorts(lon: String, lat: String) extends BodyClause {
   }
 }
 
-// resolves predicate NearPorts. Filters vessels that are near ports
 case class NearPorts(lon: String, lat: String) extends BodyClause {
   override def replaceLabel(target: String, newLabel: String): NearPorts = this
 
@@ -237,7 +246,6 @@ case class NearPorts(lon: String, lat: String) extends BodyClause {
   }
 }
 
-// resolves predicate InArea. Filters vessels that are located in an area of interest
 case class InArea(lon: String, lat: String) extends BodyClause {
   override def replaceLabel(target: String, newLabel: String): InArea = this
 
@@ -253,8 +261,6 @@ case class InArea(lon: String, lat: String) extends BodyClause {
   }
 }
 
-// resolves predicate NotInPorts. Filters vessels that are located in an area of interest
-// this is used for intervals and not time points
 case class NotInPorts(entityId: String, lon: String, lat: String, timePoint: String, iInterval: String, finalInterval: String) extends BodyClause {
   override def replaceLabel(target: String, newLabel: String): NotInPorts = this
 
@@ -282,7 +288,150 @@ case class NotInPorts(entityId: String, lon: String, lat: String, timePoint: Str
   }
 }
 
-// resolve predicate ThresholdGreater. Speed of vessels should be greater than or equal to a speed limit
+case class ExtendedDelays(vessel: String, inInterval: String, duration: String) extends BodyClause {
+  override def replaceLabel(target: String, newLabel: String): ExtendedDelays = this
+
+  override def resolve(data: EventDB, dict: Iterable[(Seq[String], Map[String, String], Map[String, Intervals], Map[String, Set[Int]])]): Iterable[(Seq[String], Map[String, String], Map[String, Intervals], Map[String, Set[Int]])] = {
+    dict.map {
+      case (entities, values, intervals, timePoints) =>
+        if (intervals(inInterval).isEmpty) {
+          var newIntervals = intervals
+          newIntervals += (duration -> Intervals.empty)
+          (entities, values, newIntervals, timePoints)
+        }
+        else {
+          // get intervals whose speed is below five miles
+          val filteredIntervals = intervals(inInterval).t.filter {
+            case (startPoint, endPoint) =>
+              var speed = 0.0
+              // if it never ends that means it has a very low speed
+              if (endPoint != -1) {
+                try {
+                  // get coordinates of start point
+                  val (lonS, latS) = data.getInstantEventCoordinates(InstantEventId("coord", 3), entities.head, startPoint - 1)
+                  // get coordinates of end point
+                  val (lonE, latE) = data.getInstantEventCoordinates(InstantEventId("coord", 3), entities.head, endPoint - 1)
+                  val spatialDistance = SpatialReasoning.getHarvesineDistance(lonS.toDouble, latS.toDouble, lonE.toDouble, latE.toDouble)
+                  // temporal distance in hours
+                  val temporalDistance = (endPoint - startPoint).toDouble / 3600
+                  // calculate speed in miles per hour
+                  speed = spatialDistance / temporalDistance
+                }
+                catch {
+                  case e: Exception => speed = 6.0
+                }
+              }
+              // speed must be below 5.0 miles per hour
+              speed < 5.0
+          }
+          var newIntervals = intervals
+          newIntervals += (duration -> Intervals(filteredIntervals))
+          (entities, values, newIntervals, timePoints)
+        }
+    }(collection.breakOut)
+  }
+}
+
+case class DiffBetween(t2: String, t1: String) extends BodyClause {
+  override def replaceLabel(target: String, newLabel: String): DiffBetween = this
+
+  override def resolve(data: EventDB, dict: Iterable[(Seq[String], Map[String, String], Map[String, Intervals], Map[String, Set[Int]])]): Iterable[(Seq[String], Map[String, String], Map[String, Intervals], Map[String, Set[Int]])] = {
+    dict.map {
+      case (entities, values, intervals, timePoints) =>
+
+        val first = timePoints(t1)
+        val second = timePoints(t2)
+
+        val filtered = first.zip(second).filter {
+          case (a, b) =>
+            val diff = Math.abs(a - b)
+            diff > 0 && diff < 3600
+        }
+
+        val newFirst = filtered.map(_._1)
+        val newSecond = filtered.map(_._2)
+
+        var newPoints = timePoints
+        newPoints += (t1 -> newFirst)
+        newPoints += (t2 -> newSecond)
+
+        (entities, values, intervals, newPoints)
+    }(collection.breakOut)
+  }
+}
+
+case class DistanceLessThan(lon1: String, lat1: String, lon2: String, lat2: String, threshold: String) extends BodyClause {
+  override def replaceLabel(target: String, newLabel: String): DistanceLessThan = this
+
+  override def resolve(data: EventDB, dict: Iterable[(Seq[String], Map[String, String], Map[String, Intervals], Map[String, Set[Int]])]): Iterable[(Seq[String], Map[String, String], Map[String, Intervals], Map[String, Set[Int]])] = {
+    var newDict = Iterable.empty[(Seq[String], Map[String, String], Map[String, Intervals], Map[String, Set[Int]])]
+    dict.foreach {
+      case (entities, values, ints, points) =>
+        val longitude1 = values(lon1)
+        val latitude1 = values(lat1)
+        val longitude2 = values(lon2)
+        val latitude2 = values(lat2)
+        if (SpatialReasoning.getHarvesineDistance(longitude1.toDouble, latitude1.toDouble, longitude2.toDouble, latitude2.toDouble) < threshold.toDouble) {
+          newDict = newDict ++ Iterable((entities, values, ints, points))
+        }
+    }
+    newDict
+  }
+}
+
+case class ManyStoppedVessels(vessel: String, cellId: String, point: String) extends BodyClause {
+  override def replaceLabel(target: String, newLabel: String): ManyStoppedVessels = this
+
+  override def resolve(data: EventDB, dict: Iterable[(Seq[String], Map[String, String], Map[String, Intervals], Map[String, Set[Int]])]): Iterable[(Seq[String], Map[String, String], Map[String, Intervals], Map[String, Set[Int]])] = {
+    var newDict = Iterable.empty[(Seq[String], Map[String, String], Map[String, Intervals], Map[String, Set[Int]])]
+    dict.foreach {
+      case (entities, values, ints, points) =>
+        // get current cell
+        val currentCell = values(cellId)
+        // get all nearby cells
+        val nearbyCells = ExtraLogicReasoning.getNearbyCellsByCell(currentCell)
+        // create the time points
+        val searchIntervals = points(point)
+
+        // get stoppedNIP vessel ids inside the search interval
+        val stoppedVesselsInTime = data.getFluent(FluentId("stoppedNIP", 1, "true"))
+          // map to vessel id and intervals
+          .map(x => (x._1.head, x._2))
+          // take the vessels inside the search intervals
+          .filter {
+          case (vesselId, ints) =>
+            val newInts = ints.t.map(_._1).filter {
+              i =>
+                // create search interval
+                val start = i - 60
+                val end = i + 60
+                searchIntervals.exists(p => p >= start && p <= end)
+            }
+            newInts.nonEmpty
+        } // map to vessel ids only
+          .map(_._1).toSet
+
+        val nearbyVessels = data.getInstantEvent(InstantEventId("coord", 3))
+          // take only the coordinates for stopped in-time vessels
+          .filter(x => stoppedVesselsInTime.contains(x._1.head))
+          .map {
+            x =>
+              (x._1(1), x._1.last)
+          }.filter {
+          case (lon, lat) =>
+            val enclosingCell = SpatialReasoning.getEnclosingGridCell(lon.toDouble, lat.toDouble)
+            // enclosing grid cell must be one of the nearby cells
+            nearbyCells.contains(enclosingCell)
+        }
+        if (nearbyVessels.size > 3) {
+          // suspicious is an area if more than 3 stopped vessels are nearby
+          newDict = newDict ++ Iterable((entities, values, ints, points))
+        }
+    }
+    newDict
+  }
+}
+
 case class ThresholdGreater(speed: String, threshold: String) extends BodyClause {
   override def replaceLabel(target: String, newLabel: String): ThresholdGreater = this
 
@@ -291,7 +440,6 @@ case class ThresholdGreater(speed: String, threshold: String) extends BodyClause
   }
 }
 
-// resolve predicate ThresholdLess. Speed of vessels should be less than a speed limit
 case class ThresholdLess(speed: String, threshold: String) extends BodyClause {
   override def replaceLabel(target: String, newLabel: String): ThresholdLess = this
 
@@ -300,7 +448,6 @@ case class ThresholdLess(speed: String, threshold: String) extends BodyClause {
   }
 }
 
-// Checks if speed of vessels exceed a speed limit
 case class InAreaSpeedGreater(areaName: String, speed: String) extends BodyClause {
   override def replaceLabel(target: String, newLabel: String): InAreaSpeedGreater = this
 
@@ -309,7 +456,6 @@ case class InAreaSpeedGreater(areaName: String, speed: String) extends BodyClaus
   }
 }
 
-// Checks if speed of vessels are below limit
 case class InAreaSpeedLess(areaName: String, speed: String) extends BodyClause {
   override def replaceLabel(target: String, newLabel: String): InAreaSpeedLess = this
 
@@ -318,7 +464,6 @@ case class InAreaSpeedLess(areaName: String, speed: String) extends BodyClause {
   }
 }
 
-// Duration of intervals should be greater than a threshold
 case class IntDurGreater(inInterval: String, duration: String) extends BodyClause {
   override def replaceLabel(target: String, newLabel: String): IntDurGreater = this
 
@@ -340,6 +485,45 @@ case class IntDurGreater(inInterval: String, duration: String) extends BodyClaus
             (entities, values, newIntervals, timePoints)
           }
       }
+  }
+}
+
+case class CheckHeadingToVessels(vessel: String, lon: String, lat: String, heading: String, t: String) extends BodyClause {
+  override def replaceLabel(target: String, newLabel: String): CheckHeadingToVessels = this
+
+  override def resolve(data: EventDB, dict: Iterable[(Seq[String], Map[String, String], Map[String, Intervals], Map[String, Set[Int]])]): Iterable[(Seq[String], Map[String, String], Map[String, Intervals], Map[String, Set[Int]])] = {
+    var newDict = Iterable.empty[(Seq[String], Map[String, String], Map[String, Intervals], Map[String, Set[Int]])]
+    dict.foreach {
+      case (entities, values, ints, points) =>
+        val vesselId = values(vessel)
+        val longitude = values(lon).toDouble
+        val latitude = values(lat).toDouble
+        val headingOfVessel = values(heading).toDouble
+        // get enclosing cell
+        val enclosingCell = SpatialReasoning.getEnclosingGridCell(longitude, latitude)
+        // get nearby cells
+        val nearbyCells = ExtraLogicReasoning.getNearbyCellsByEnclosingCell(enclosingCell)
+        // get nearby vessels at current time
+        val nearbyVessels = data.getInstantEvent(InstantEventId("coord", 3)).filter(_._2.intersect(points(t)).nonEmpty).map(_._1).filter {
+          ent =>
+            val lon = ent(1).toDouble
+            val lat = ent.last.toDouble
+            // get current vessel enclosing cell
+            val currentCell = SpatialReasoning.getEnclosingGridCell(lon, lat)
+            // check if it is nearby
+            nearbyCells.contains(currentCell)
+        }.filterNot(_.head == vesselId)
+        // true if it is headed fast towards another vessel (any nearby vessel)
+        if (nearbyVessels.exists {
+          x =>
+            val longitude2 = x(1).toDouble
+            val latitude2 = x.last.toDouble
+            SpatialReasoning.hasHeading(longitude, latitude, headingOfVessel, longitude2, latitude2)
+        }) {
+          newDict = newDict ++ Iterable((entities, values, ints, points))
+        }
+    }
+    newDict
   }
 }
 

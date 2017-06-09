@@ -14,10 +14,15 @@
             <artifactId>jts-core</artifactId>
             <version>1.14.0</version>
         </dependency>
-        <dependency>
+	<dependency>
             <groupId>org.scala-lang.modules</groupId>
             <artifactId>scala-parser-combinators_2.11</artifactId>
             <version>1.0.6</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka_2.11</artifactId>
+            <version>0.10.0.0</version>
         </dependency>
     </dependencies>
 

@@ -67,6 +67,10 @@ object ParseDefinitions extends JavaTokenParsers {
       case (None ~ arg1 ~ arg2 ~ arg3) => Data.RelativeComplementAll(arg1, arg2, arg3, strict = false)
     }
 
+  private def removeDuplicates: Parser[Data.RemoveDuplicates] = "RemoveDuplicates" ~> alphanumeric ~ alphanumeric ^^ {
+    case (id1 ~ id2) => Data.RemoveDuplicates(id1, id2)
+  }
+
   /* ============ Maritime Domain ============ */
 
   private def notNearPorts: Parser[Data.NotNearPorts] = "NotNearPorts" ~> alphanumeric ~ alphanumeric ^^ {
@@ -83,6 +87,22 @@ object ParseDefinitions extends JavaTokenParsers {
 
   private def notInPorts: Parser[Data.NotInPorts] = "NotInPorts" ~> alphanumeric ~ alphanumeric ~ alphanumeric ~ alphanumeric ~ alphanumeric ~ alphanumeric ^^ {
     case (entityId ~ lon ~ lat ~ timePoint ~ iInterval ~ finalInterval) => Data.NotInPorts(entityId, lon, lat, timePoint, iInterval, finalInterval)
+  }
+
+  private def extendedDelays: Parser[Data.ExtendedDelays] = "ExtendedDelays" ~> alphanumeric ~ alphanumeric ~ alphanumeric ^^ {
+    case (vessel ~ inInterval ~ duration) => Data.ExtendedDelays(vessel, inInterval, duration)
+  }
+
+  private def diffBetween: Parser[Data.DiffBetween] = "DifferenceBetween" ~> alphanumeric ~ alphanumeric ^^ {
+    case (t2 ~ t1) => Data.DiffBetween(t2, t1)
+  }
+
+  private def distanceLessThan: Parser[Data.DistanceLessThan] = "DistanceLessThan" ~> alphanumeric ~ alphanumeric ~ alphanumeric ~ alphanumeric ~ alphanumeric ^^ {
+    case (lon1 ~ lat1 ~ lon2 ~ lat2 ~ threshold) => Data.DistanceLessThan(lon1, lat1, lon2, lat2, threshold)
+  }
+
+  private def manyStoppedVessels: Parser[Data.ManyStoppedVessels] = "ManyStoppedVessels" ~> alphanumeric ~ alphanumeric ~ alphanumeric ^^ {
+    case (vessel ~ cell ~ point) => Data.ManyStoppedVessels(vessel, cell, point)
   }
 
   private def thresholdGreater: Parser[Data.ThresholdGreater] = "ThresholdGreater" ~> alphanumeric ~ alphanumeric ^^ {
@@ -105,13 +125,18 @@ object ParseDefinitions extends JavaTokenParsers {
     case (area ~ speed) => Data.InAreaSpeedLess(area, speed)
   }
 
+  private def checkHeading: Parser[Data.CheckHeadingToVessels] = "CheckHeadingToVessels" ~> alphanumeric ~ alphanumeric ~ alphanumeric ~ alphanumeric ~ alphanumeric ^^ {
+    case (vessel ~ lon ~ lat ~ heading ~ t) => Data.CheckHeadingToVessels(vessel, lon, lat, heading, t)
+  }
+
   /* ============ Maritime Domain ============ */
 
   // HappensAt | HoldsFor | Union_All | Intersect_All | Relative_Complement_All
   private def bodyClause: Parser[Data.BodyClause] =
     happensAtIE | happensAtFluentStart | happensAtFluentEnd | holdsFor | holdsAt | notHappensAtIE | notHoldsAt |
       unionAll | intersectAll | relativeComplementAll | complementAll | notNearPorts | nearPorts | inArea | notInPorts |
-      thresholdGreater | thresholdLess | intDurGreater | inAreaSpeedGreater | inAreaSpeedLess
+      extendedDelays | diffBetween | distanceLessThan | manyStoppedVessels | thresholdGreater | thresholdLess |
+      intDurGreater | inAreaSpeedGreater | inAreaSpeedLess | checkHeading | removeDuplicates
 
   // HappensAt <instantEvent> <args> <time>
   private def happensAtIE: Parser[Data.HappensAtIE] = "HappensAt" ~> instantEventEntity ~ alphanumeric ^^ {

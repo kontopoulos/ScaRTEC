@@ -1,9 +1,11 @@
 package RTEC.Execute
 
 import java.io
+import java.util.Properties
 
 import RTEC.Data.ExtraLogicReasoning
 import RTEC._
+import org.apache.kafka.clients.producer.{KafkaProducer, ProducerRecord}
 
 class Reasoner {
 
@@ -71,18 +73,13 @@ class Reasoner {
     val e = System.currentTimeMillis
     val recognitionTime = e - s
 
-    // Write results for this window
-    val fd = new io.FileWriter(outputFile, true)
-    fd.write(s"ER: ($start-$end]\n\n")
-    fd.write(_windowDB.output + "\n\n")
-    fd.close
-    // output to csv format
-    /*_windowDB.toCsvFormat.foreach{
-      case (ce) =>
-        val w = new java.io.FileWriter(s"rec8/${ce._1}.csv",true)
-        w.write(ce._2.mkString("\n") + "\n")
-        w.close
-    }*/
+
+    /*val fd = new io.FileWriter("recognition.txt", true)
+    fd.write(_windowDB.toJson)
+    fd.close*/
+
+    // send results of current window
+    kafkaSend(_windowDB.toJson)
 
     // return recognition time
     (recognitionTime,(t-s))
@@ -319,6 +316,23 @@ class Reasoner {
     */
   def updateCurrentWindowEntities(e: Map[String, Iterable[Seq[String]]]): Unit = {
     _previousWindowEntities = e
+  }
+
+  def kafkaSend(output: String): Unit = {
+    val  props = new Properties()
+    props.put("bootstrap.servers", "localhost:9092")
+
+    props.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer")
+    props.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer")
+
+    val producer = new KafkaProducer[String, String](props)
+
+    val TOPIC="Hello-Kafka"
+
+    val record = new ProducerRecord(TOPIC, "localhost", output)
+    producer.send(record)
+
+    producer.close
   }
 
 }

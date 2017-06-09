@@ -19,90 +19,34 @@ class EventDB(val iEs: Map[Data.InstantEventId, Data.IEType],
   var _toDiscard: Map[Data.FluentId, Set[Seq[String]]] = Map()
   private var f: Map[Data.FluentId, Map[Seq[String], Data.Intervals]] = Map()
 
-
   /**
-    * Converts in memory database of events to string
-    * @return string of events
+    * Convert CE results to json
+    * @return string of json
     */
-  override def toString: String = {
-    val IEStr = {
-      for {
-        ie <- _iETime
-        data <- ie._2
-      }
-        yield s"${ie._1.name}(${data._1.mkString(",")}),[${data._2.mkString(",")}]"
-
-    }.mkString("\n")
-
-    val fluentStr = {
-      for {
-        fluent <- _fluentTime
-        data <- fluent._2
-      }
-        yield s"${fluent._1.name}(${data._1.mkString(",")})=${fluent._1.value},[${data._2}]"
-
-    }.mkString("\n")
-
-    IEStr + "\n" + fluentStr
-  }
-
-  /**
-    * Creates a string from stored complex events in RTEC-like (PROLOG) format
-    * @return string of complex events
-    */
-  def output: String = {
-    val IEStr = {
-      for {
-        ie <- _iETime if iEs(ie._1) == Data.OutputIE
-        data <- ie._2.mapValues(_.toVector.sorted)
-      }
-        yield s"${ie._1.name}(${data._1.mkString(",")}),[${data._2.mkString(",")}]"
-
-    }.mkString("\n")
-
-    val fluentStr = {
-      for {
-        fluent <- _fluentTime if fluents(fluent._1) == Data.SimpleFluent || fluents(fluent._1) == Data.OutputSDFluent
-        data <- fluent._2.filter(_._2.nonEmpty)
-      }
-        yield s"${fluent._1.name}(${data._1.mkString(",")})=${fluent._1.value},[${data._2}]"
-
-    }.mkString("\n")
-
-    IEStr + "\n" + fluentStr
-  }
-
-  /**
-    * Converts in memory complex events to csv strings
-    * There is one csv file per complex event
-    * @return csv per complex event
-    */
-  def toCsvFormat: Map[String,Iterable[String]] = {
+  def toJson: String = {
     val fluentStr = {
       for {
         fluent <- _fluentTime if fluents(fluent._1) == Data.SimpleFluent || fluents(fluent._1) == Data.OutputSDFluent
         data <- fluent._2.filter(_._2.nonEmpty)
       }
         yield {
-          data._2.t.filterNot(_._2 == -1).map{case (s,e) => s"${fluent._1.name}|${data._1.mkString("|")}|${fluent._1.value}|$s|$e"}.mkString("\n").replaceAll("-1","inf")
+          data._2.t.filterNot(_._2 == -1).map{
+            case (s,e) =>
+              if (fluent._1.name == "lowSpeed" || fluent._1.name == "stopped" || fluent._1.name == "sailing" || fluent._1.name == "loitering") {
+                "{"+"\"name\":\""+fluent._1.name+"\",\"vesselId\":\""+data._1.head+"\",\"startTime\":\""+s+"\",\"endTime\":\""+e+"\"}"
+              }
+              else if (fluent._1.name == "withinArea" || fluent._1.name == "highSpeedIn") {
+                "{"+"\"name\":\""+fluent._1.name+"\",\"vesselId\":\""+data._1.head+"\",\"areaId\":\""+data._1(1)+"\",\"startTime\":\""+s+"\",\"endTime\":\""+e+"\"}"
+              }
+              else if (fluent._1.name == "rendezVouz") {
+                "{"+"\"name\":\""+fluent._1.name+"\",\"vesselId1\":\""+data._1.head+"\",\"vesselId2\":\""+data._1(1)+"\",\"startTime\":\""+s+"\",\"endTime\":\""+e+"\"}"
+              }
+          }.mkString(",")
         }
     }
-
-    val fluentsMap = fluentStr.map(x => (x.split("[|]").head,x)).groupBy(_._1).mapValues(x => x.map(_._2))
-
-    val IEStr = {
-      for {
-        ie <- _iETime if iEs(ie._1) == Data.OutputIE
-        data <- ie._2.mapValues(_.toVector.sorted)
-      }
-        yield {
-          data._2.map(i => s"${ie._1.name}|${data._1.mkString("|")}|$i|$i").mkString("\n")
-        }
-    }
-
-    val instantsMap = IEStr.map(x => (x.split("[|]").head,x)).groupBy(_._1).mapValues(x => x.map(_._2))
-
-    fluentsMap ++ instantsMap
+    // build json
+    val json = "[" + fluentStr.filterNot(e => e.isEmpty || e.contains("other_time")).mkString(",")
+    json.substring(0, json.length) + "]"
   }
 
   /**
@@ -152,7 +96,6 @@ class EventDB(val iEs: Map[Data.InstantEventId, Data.IEType],
   def amalgamate(prevFluents: Map[Data.FluentId, Map[Seq[String], Data.Intervals]]): Unit = {
     f = prevFluents
   }
-
 
   def getEntities(id: Data.EventId, pattern: Seq[String] = null): Iterable[Seq[String]] = {
     id match {
@@ -219,10 +162,6 @@ class EventDB(val iEs: Map[Data.InstantEventId, Data.IEType],
       Map(entity -> _fluentTime(id).getOrElse(entity, Data.Intervals.empty))
   }
 
-  /**
-    * Update database with instant events
-    * @param input
-    */
   def updateIE(input: Iterable[((Data.InstantEventId, Seq[String]), Set[Int])]): Unit = {
     input foreach { ie =>
       val m: Map[Seq[String], Set[Int]] = _iETime(ie._1._1)
@@ -231,11 +170,6 @@ class EventDB(val iEs: Map[Data.InstantEventId, Data.IEType],
     }
   }
 
-  /**
-    * Update database with durative events (fluents)
-    * @param input
-    * @param flag
-    */
   def updateFluent(input: Iterable[((Data.FluentId, Seq[String]), Data.Intervals)], flag: Boolean): Unit = {
     input foreach { fluent =>
       val m: Map[Seq[String], Data.Intervals] = _fluentTime(fluent._1._1)

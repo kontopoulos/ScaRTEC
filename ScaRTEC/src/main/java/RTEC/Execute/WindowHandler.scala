@@ -1,7 +1,11 @@
 package RTEC.Execute
 
+import java.util.{Collections, Properties}
+import scala.collection.JavaConverters._
+
 import RTEC.Data
 import RTEC.Data.ExtraLogicReasoning
+import org.apache.kafka.clients.consumer.KafkaConsumer
 
 /**
   * Created by ikon on 30-Nov-16.
@@ -10,23 +14,14 @@ object WindowHandler {
 
   private var inputDir = ""
   private var outputFile = ""
-  // number of windows
   private var numWindows = 0
   private var totalRecognitionTime = 0L
-  // number of low level events
   private var SDEs = 0
-  // number of complex events produced
   private var CEs = 0
-  // initiations of non terminated simple fluents
   private var _pendingInitiations: Iterable[((Data.FluentId, Seq[String]), Set[Int])] = Iterable()
-  // non terminated statically determined fluents
   private var _nonTerminatedSDFluents: Map[Data.FluentId, Map[Seq[String], Data.Intervals]] = Map()
-  // entities (e.g., vessel ids from dynamic grounding) from previous window that need to be transferred to the next
   private var _previousWindowEntities: Map[String, Iterable[Seq[String]]] = Map()
-  // variables below are for the spatial preprocessing
-  // projections based on trajectories
   private var projections: Map[String,Map[Int,(Seq[String], Seq[String])]] = Map()
-  // proximity of vessels
   private var proximity: Map[(String,String),Seq[(Int,Int)]] = Map()
 
   /**
@@ -48,13 +43,11 @@ object WindowHandler {
     */
   def performER(windowSize: Int, slidingStep: Int, lastTime: Int, startTime: Int, clock: Int): Unit = {
     var batchLimit = startTime
-    // Parse declarations and patterns (definitions)
+    // Read input files
     Reader.Main.readDeclarations(s"$inputDir/declarations.txt")
     Reader.Main.readDefinitions(s"$inputDir/definitions.txt")
 
     /*================= Maritime Domain ==================*/
-    // ScaRTEC is a general event recognition engine
-    // Below ScaRTEC reads additional data for the maritime domain
     try {
       ExtraLogicReasoning.readPorts(s"$inputDir/static_data/ports.csv")
       ExtraLogicReasoning.readGrid(s"$inputDir/static_data/grid.csv")
@@ -75,16 +68,29 @@ object WindowHandler {
       case _ => println("Error while reading static data"); null
     }
 
-    // get the file of the stream
-    val stream = scala.io.Source.fromFile(s"$inputDir/dataset.txt").getLines
     // holds the data of the batch
     var batch = Vector.empty[String]
     var batch_tmp = Vector.empty[String]
 
-    // start event recognition to the stream
+    val TOPIC="Hello-Kafka"
+
+    val  props = new Properties()
+    props.put("bootstrap.servers", "localhost:9092")
+
+    props.put("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer")
+    props.put("value.deserializer", "org.apache.kafka.common.serialization.StringDeserializer")
+    props.put("group.id", "group1")
+
+    val consumer = new KafkaConsumer[String, String](props)
+
+    consumer.subscribe(Collections.singletonList(TOPIC))
+
     scala.util.control.Breaks.breakable {
-      stream.foreach {
-        str =>
+      while (true) {
+        val records = consumer.poll(100)
+        for (record <- records.asScala) {
+          val str = record.value
+          //println(str)
           if (getEventTime(str) <= batchLimit) {
             // until upper limit is reached store to batch
             batch :+= str
@@ -100,13 +106,12 @@ object WindowHandler {
             println(s"ER: ($lowerLimit - $batchLimit]")
 
             //batchSpatialPreprocessing(batch_tmp,batchLimit,lowerLimit, lastTime)
-            batchEventRecognition(batch_tmp, batchLimit, lowerLimit, clock, staticData,numWindows)
+            batchEventRecognition(batch_tmp, batchLimit, lowerLimit, clock, staticData, numWindows)
 
-            // add event to batch
             batch :+= str
-            // increase the batch limit (move to the next window)
             batchLimit += slidingStep
           }
+        }
       }
     }
     // end of stream
@@ -123,10 +128,7 @@ object WindowHandler {
     // end of event recognition
 
 
-    /* ==== some statistics ====*/
-    // avg number of low level events
     val avgSDEs = SDEs/numWindows
-    // avg number of complex events
     val avgCEs = CEs/numWindows
     var denominator = 1
     if ((numWindows-1) > 0) denominator = numWindows-1
@@ -139,6 +141,7 @@ object WindowHandler {
     fd.close()
   }
 
+
   /**
     * Performs event recognition for current batch
     * @param batch current batch data
@@ -148,7 +151,6 @@ object WindowHandler {
     * @param staticData
     */
   private def batchEventRecognition(batch: Vector[String], batchLimit: Int, lowerLimit: Int, clock: Int, staticData: ((Set[Data.InstantEvent], Set[Data.Fluent], (Seq[Data.IEPredicate], Seq[Data.FPredicate]), (Set[Data.InputEntity], Seq[Data.BuiltEntity]), Seq[(Data.EventId, String)])), currentWindow: Int): Unit = {
-    // parse the input batch of events
     val input = parseStreamBatch(batch)
 
     val windowReasoner = new Reasoner
@@ -157,7 +159,7 @@ object WindowHandler {
     windowReasoner.updateSDFluents(_nonTerminatedSDFluents)
     windowReasoner.updateCurrentWindowEntities(_previousWindowEntities)
 
-    // start event recognition
+    // Start event recognition
     val recTime = windowReasoner.run(staticData, input, outputFile, lowerLimit, batchLimit, clock)
     if (currentWindow != 1) totalRecognitionTime += recTime._1
     CEs += windowReasoner.numComplexEvents
@@ -170,7 +172,6 @@ object WindowHandler {
 
   private def batchSpatialPreprocessing(batch: Vector[String], batchLimit: Int, lowerLimit: Int, lastTime: Int): Unit =
   {
-    // parse the input batch of events
     val input = parseStreamBatch(batch)
 
     val windowReasoner = new SpatialReasoner
