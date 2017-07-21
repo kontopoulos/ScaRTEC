@@ -42,4 +42,4 @@ ER: (1443657601 - 1443661201]
 
 ```
 
-This is the segment of the stream in which the ER is happening.
+This is the segment of the stream in which the ER is happening. The results are written in the topic mentioned before.
