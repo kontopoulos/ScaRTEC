@@ -1,0 +1,18 @@
+> InitiatedAt [stopped Vessel = true] T
+    HappensAt [stop_start Vessel] T
+    HappensAt [coord Vessel Lon Lat] T
+    NotNearPorts Lon Lat
+
+> TerminatedAt [stopped Vessel = true] T
+    HappensAt [stop_end Vessel] T
+
+> InitiatedAt [lowSpeed Vessel = true] T
+    HappensAt [slow_motion_start Vessel] T
+    HappensAt [coord Vessel Lon Lat] T
+    NotNearPorts Lon Lat
+
+> TerminatedAt [lowSpeed Vessel = true] T
+    HappensAt [slow_motion_end Vessel] T
+
+> TerminatedAt [lowSpeed Vessel = true] T
+    HappensAt Start [stopped Vessel = true] T

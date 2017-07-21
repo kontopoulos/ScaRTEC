@@ -1,0 +1,60 @@
+InstantEvents {
+    Input: [slow_motion_start 1]
+    Input: [slow_motion_end 1]
+    Input: [change_in_speed_start 1]
+    Input: [change_in_speed_end 1]
+    Input: [gap_end 1]
+    Input: [change_in_heading 1]
+    Input: [stop_start 1]
+    Input: [stop_end 1]
+    Input: [coord 3]
+    Input: [velocity 3]
+}
+
+Fluents {
+
+    Simple: [stopped 1 = true]
+
+    Simple: [lowSpeed 1 = true]
+
+}
+
+InputEntities {
+    Speed 1:
+        [slow_motion_start]
+        [slow_motion_end]
+        [change_in_speed_start]
+        [change_in_speed_end]
+
+    Gap 1:
+        [gap_end]
+
+    Turn 1:
+        [change_in_heading]
+
+    Coord 3:
+        [coord]
+
+    Vel 3:
+        [velocity]
+
+    VesselInput 1:
+        [stop_start]
+        [stop_end]
+}
+
+BuiltEntities {
+    VesselId 1:
+        [VesselInput()]
+        [Speed()]
+        [Gap()]
+        [Turn()]
+        [Coord(0,1)]
+        [Vel(0,1)]
+
+}
+
+CachingOrder {
+    [stopped 1 = _]         -> VesselId
+    [lowSpeed 1 = _]        -> VesselId
+}
