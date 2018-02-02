@@ -203,6 +203,68 @@ case class RelativeComplementAll(baseInput: String, excludedInput: Seq[String], 
 
 /* ====================== Maritime Domain ====================== */
 
+case class IsFishing(vesselId: String) extends BodyClause {
+  override def replaceLabel(target: String, newLabel: String): IsFishing = this
+
+  override def resolve(data: Execute.EventDB, dict: Iterable[Predicate.GroundingDict]): Iterable[Predicate.GroundingDict] = {
+    dict
+      .filter {
+        case (entities, values, intervals, timePoints) =>
+          val id = values(vesselId)
+          ExtraLogicReasoning.getVesselTypes.get(id) match {
+            case Some(v) => {
+              v == "fishing"
+            }
+            case None => {
+              false
+            }
+          }
+      }
+  }
+}
+
+case class IsAtTravelSpeed(vessel: String, speed: String) extends BodyClause {
+  override def replaceLabel(target: String, newLabel: String): IsAtTravelSpeed = this
+
+  override def resolve(data: Execute.EventDB, dict: Iterable[Predicate.GroundingDict]): Iterable[Predicate.GroundingDict] = {
+    dict.filter{
+      v =>
+        val velocity = v._2(speed).toDouble
+        val id = v._2(vessel)
+        val (min,max,avg) = ExtraLogicReasoning.getVesselTypes.get(id) match {
+          case Some(vType) => {
+            ExtraLogicReasoning.getSpeedTypes(vType)
+          }
+          case None => {
+            ExtraLogicReasoning.getSpeedTypes("other")
+          }
+        }
+        velocity < max && velocity > min
+    }
+  }
+}
+
+case class NotAtTravelSpeed(vessel: String, speed: String) extends BodyClause {
+  override def replaceLabel(target: String, newLabel: String): NotAtTravelSpeed = this
+
+  override def resolve(data: Execute.EventDB, dict: Iterable[Predicate.GroundingDict]): Iterable[Predicate.GroundingDict] = {
+    dict.filter{
+      v =>
+        val velocity = v._2(speed).toDouble
+        val id = v._2(vessel)
+        val (min,max,avg) = ExtraLogicReasoning.getVesselTypes.get(id) match {
+          case Some(vType) => {
+            ExtraLogicReasoning.getSpeedTypes(vType)
+          }
+          case None => {
+            ExtraLogicReasoning.getSpeedTypes("other")
+          }
+        }
+        velocity > max && velocity < min
+    }
+  }
+}
+
 case class NotNearPorts(lon: String, lat: String) extends BodyClause {
   override def replaceLabel(target: String, newLabel: String): NotNearPorts = this
 

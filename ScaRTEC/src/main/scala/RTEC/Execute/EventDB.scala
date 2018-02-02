@@ -18,11 +18,57 @@ class EventDB(val iEs: Map[Data.InstantEventId, Data.IEType],
   var _toDiscard: Map[Data.FluentId, Set[Seq[String]]] = Map()
   private var f: Map[Data.FluentId, Map[Seq[String], Data.Intervals]] = Map()
 
+  def output: String = {
+    val IEStr = {
+      for {
+        ie <- _iETime if iEs(ie._1) == Data.OutputIE
+        data <- ie._2.mapValues(_.toVector.sorted)
+      }
+        yield s"${ie._1.name}(${data._1.mkString(",")}),[${data._2.mkString(",")}]"
+
+    }.mkString("\n")
+
+    val fluentStr = {
+      for {
+        fluent <- _fluentTime if fluents(fluent._1) == Data.SimpleFluent || fluents(fluent._1) == Data.OutputSDFluent
+        data <- fluent._2.filter(_._2.nonEmpty)
+      }
+        yield s"${fluent._1.name}(${data._1.mkString(",")})=${fluent._1.value},[${data._2}]"
+
+    }.mkString("\n")
+
+    IEStr + "\n" + fluentStr
+  }
+
+
   /**
     * Convert CE results to json
     * @return string of json
     */
   def toJson: String = {
+    val IEStr = {
+      for {
+        ie <- _iETime if iEs(ie._1) == Data.OutputIE
+        data <- ie._2.mapValues(_.toVector.sorted)
+      }
+        yield {
+          data._2.map{
+            timepoint =>
+              if (ie._1.name == "loitering" || ie._1.name == "trawling") {
+                "{"+"\"name\":\""+ie._1.name+"\",\"vesselId\":\""+data._1.head+"\",\"timepoint\":\""+timepoint+"\"}"
+              }
+              else if (ie._1.name == "highSpeedIn") {
+                "{"+"\"name\":\""+ie._1.name+"\",\"vesselId\":\""+data._1.head+"\",\"AreaId\":\""+data._1(1)+"\",\"timepoint\":\""+timepoint+"\"}"
+              }
+              else if (ie._1.name == "rendezVous") {
+                "{"+"\"name\":\""+ie._1.name+"\",\"vesselId1\":\""+data._1.head+"\",\"vesselId2\":\""+data._1(1)+"\",\"timepoint\":\""+timepoint+"\"}"
+              }
+          }
+        }
+
+    }.mkString("\n")
+
+
     val fluentStr = {
       for {
         fluent <- _fluentTime if fluents(fluent._1) == Data.SimpleFluent || fluents(fluent._1) == Data.OutputSDFluent
@@ -31,14 +77,14 @@ class EventDB(val iEs: Map[Data.InstantEventId, Data.IEType],
         yield {
           data._2.t.filterNot(_._2 == -1).map{
             case (s,e) =>
-              if (fluent._1.name == "lowSpeed" || fluent._1.name == "stopped" || fluent._1.name == "sailing" || fluent._1.name == "loitering") {
+              if (fluent._1.name == "lowSpeed" || fluent._1.name == "stopped" || fluent._1.name == "underWay" || fluent._1.name == "gap" || fluent._1.name == "aground" || fluent._1.name == "travelSpeed" || fluent._1.name == "atAnchor") {
                 "{"+"\"name\":\""+fluent._1.name+"\",\"vesselId\":\""+data._1.head+"\",\"startTime\":\""+s+"\",\"endTime\":\""+e+"\"}"
               }
-              else if (fluent._1.name == "withinArea" || fluent._1.name == "highSpeedIn") {
-                "{"+"\"name\":\""+fluent._1.name+"\",\"vesselId\":\""+data._1.head+"\",\"areaId\":\""+data._1(1)+"\",\"startTime\":\""+s+"\",\"endTime\":\""+e+"\"}"
-              }
-              else if (fluent._1.name == "rendezVouz") {
+              else if (fluent._1.name == "tugging") {
                 "{"+"\"name\":\""+fluent._1.name+"\",\"vesselId1\":\""+data._1.head+"\",\"vesselId2\":\""+data._1(1)+"\",\"startTime\":\""+s+"\",\"endTime\":\""+e+"\"}"
+              }
+              else {
+                ""
               }
           }.mkString(",")
         }

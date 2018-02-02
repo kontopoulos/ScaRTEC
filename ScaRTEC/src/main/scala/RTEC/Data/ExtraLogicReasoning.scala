@@ -1,5 +1,6 @@
 package RTEC.Data
 
+//import RTEC.Execute.SpatialReasoner
 import com.vividsolutions.jts.geom.{Coordinate, GeometryFactory, Polygon}
 import com.vividsolutions.jts.operation.valid.IsValidOp
 
@@ -22,8 +23,52 @@ object ExtraLogicReasoning {
   private var polygonEdges: Map[String,Array[(Double,Double)]] = Map()
   // variable that stores speed limits per area
   private var speedLimitsAreas: Map[String, Double] = Map()
+  // variable that stores fishing vessels
+  //private var fishingVessels: Set[String] = Set()
+  // variable that stores for each vessel mmsi its type
+  private var vesselTypes: Map[String,String] = Map()
+  // variable that stores for each vessel type its speed values (min,max,average)
+  private var speedTypes: Map[String,(Double,Double,Double)] = Map()
 
 
+  /**
+    * Read list of fishing vessels from csv file
+    *
+    * @param file to read
+    */
+  /*def readFishingVessel(file: String): Unit = {
+    var fishingtoread = scala.io.Source.fromFile(file).getLines.map{
+      line =>
+        val parts = line.split("[|]")
+        val mmsiwanted = parts.last
+        (mmsiwanted)
+    }.toSet
+    fishingVessels = fishingtoread
+  }*/
+
+  /**
+    * Reads list of vessel types from csv file
+    * @param file to read
+    */
+  def readVesselTypes(file: String): Unit = {
+    vesselTypes = scala.io.Source.fromFile(file).getLines.map{
+      line =>
+        val parts = line.split("[|]")
+        (parts(1),parts(2))
+    }.toMap
+  }
+
+  /**
+    * Reads speed values per vessel type
+    * @param file to read
+    */
+  def readSpeedsPerType(file: String): Unit = {
+    speedTypes = scala.io.Source.fromFile(file).getLines.map{
+      line =>
+        val parts = line.split("[|]")
+        (parts.head,(parts(1).toDouble,parts(2).toDouble,parts.last.toDouble))
+    }.toMap
+  }
 
   /**
     * Reads ports from csv file
@@ -291,9 +336,33 @@ object ExtraLogicReasoning {
         }
         false
       }
-        // if no area is found return false
+      // if no area is found return false
       case None => false
     }
   }
+
+  /**
+    * Static grounding for suspicious area
+    *
+    * @param entities
+    * @return
+    */
+  def groundStatic(entities: Map[String, Iterable[Seq[String]]]): Map[String, Iterable[Seq[String]]] = {
+    var newEntities = entities
+
+    val cellIds = getCellIds.map{
+      id =>
+        Seq(id,true.toString)
+    }
+
+    newEntities += ("Suspicious" -> cellIds)
+    newEntities
+  }
+
+  //def getFishingVessels: Set[String] = fishingVessels
+
+  def getVesselTypes: Map[String,String] = vesselTypes
+
+  def getSpeedTypes: Map[String,(Double,Double,Double)] = speedTypes
 
 }

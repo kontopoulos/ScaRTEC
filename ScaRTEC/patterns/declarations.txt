@@ -4,11 +4,19 @@ InstantEvents {
     Input: [change_in_speed_start 1]
     Input: [change_in_speed_end 1]
     Input: [gap_end 1]
+    Input: [gap_start 1]
     Input: [change_in_heading 1]
     Input: [stop_start 1]
     Input: [stop_end 1]
     Input: [coord 3]
     Input: [velocity 3]
+    Input: [within 2]
+    Input: [near 2]
+
+    Output: [highSpeedIn 3]
+    Output: [loitering 2]
+    Output: [trawling 2]
+    Output: [rendezVous 3]
 }
 
 Fluents {
@@ -16,6 +24,26 @@ Fluents {
     Simple: [stopped 1 = true]
 
     Simple: [lowSpeed 1 = true]
+
+    Simple: [underWay 1 = true]
+
+    Simple: [gap 1 = true]
+
+    Simple: [potentialAground 1 = true]
+
+    Simple: [anchor 1 = true]
+
+    Simple: [trawlSpeed 1 = true]
+
+    Simple: [travelSpeed 1 = true]
+
+    Simple: [travel 1 = true]
+
+    Simple: [tugging 2 = true]
+
+    OutputSD: [aground 1 = true]
+
+    OutputSD: [atAnchor 1 = true]
 
 }
 
@@ -25,6 +53,8 @@ InputEntities {
         [slow_motion_end]
         [change_in_speed_start]
         [change_in_speed_end]
+        [stop_start]
+        [stop_end]
 
     Gap 1:
         [gap_end]
@@ -32,29 +62,59 @@ InputEntities {
     Turn 1:
         [change_in_heading]
 
+    Area 2:
+        [within]
+
+    VesselProx 2:
+        [near]
+
     Coord 3:
         [coord]
 
     Vel 3:
         [velocity]
-
-    VesselInput 1:
-        [stop_start]
-        [stop_end]
 }
 
 BuiltEntities {
     VesselId 1:
-        [VesselInput()]
         [Speed()]
         [Gap()]
         [Turn()]
         [Coord(0,1)]
         [Vel(0,1)]
 
+    VesselArea 2:
+        [Area()]
+
+    HighSpeed 3:
+        [Area() (true)]
+
+    Loit 2:
+        [Vesseld() (true)]
+
+    Rend 3:
+        [VesselProx() (true)]
+
+    Pairs 2:
+        [VesselProx()]
+
 }
 
 CachingOrder {
+    [gap 1 = _]         -> VesselId
     [stopped 1 = _]         -> VesselId
     [lowSpeed 1 = _]        -> VesselId
+    [underWay 1 = _]         -> VesselId
+    [potentialAground 1 = _] -> VesselId
+    [aground 1 = true]       -> VesselId
+    [anchor 1 = _]           -> VesselId
+    [atAnchor 1 = true]       -> VesselId
+    [trawlSpeed 1 = _]           -> VesselId
+    [travelSpeed 1 = _]           -> VesselId
+    [travel 1 = _]           -> VesselId
+    [tugging 2 = _]           -> Pairs
+    [highSpeedIn 3]         -> HighSpeed
+    [loitering 2]           -> Loit
+    [trawling 2]           -> Loit
+    [rendezVous 3]          -> Rend
 }

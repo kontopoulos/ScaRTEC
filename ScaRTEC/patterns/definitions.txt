@@ -1,18 +1,164 @@
+> HappensAt [highSpeedIn Vessel AreaName true] T
+    HappensAt [within Vessel AreaName] T
+    HappensAt [velocity Vessel Speed Heading] T
+    SpeedInAreaGreater AreaName Speed
+
+> HappensAt [loitering Vessel true] T
+    HappensAt [within Vessel AreaName] T
+    HoldsAt [stopped Vessel = true] T
+
+> HappensAt [rendezVous Vessel1 Vessel2 true] T
+    HappensAt [near Vessel1 Vessel2] T
+    HoldsAt [stopped Vessel1 = true] T
+    HoldsAt [stopped Vessel2 = true] T
+
+> HappensAt [trawling Vessel true] T
+    HoldsAt [trawlSpeed Vessel = true] T
+    IsFishingVessel Vessel
+    Not HoldsAt [travel Vessel = true] T
+
 > InitiatedAt [stopped Vessel = true] T
     HappensAt [stop_start Vessel] T
-    HappensAt [coord Vessel Lon Lat] T
-    NotNearPorts Lon Lat
+    Not HappensAt [gap_start Vessel] T
 
 > TerminatedAt [stopped Vessel = true] T
     HappensAt [stop_end Vessel] T
 
+> TerminatedAt [stopped Vessel = true] T
+    HappensAt Start [gap Vessel = true] T
+
 > InitiatedAt [lowSpeed Vessel = true] T
     HappensAt [slow_motion_start Vessel] T
-    HappensAt [coord Vessel Lon Lat] T
-    NotNearPorts Lon Lat
+    Not HappensAt [gap_start Vessel] T
 
 > TerminatedAt [lowSpeed Vessel = true] T
     HappensAt [slow_motion_end Vessel] T
 
 > TerminatedAt [lowSpeed Vessel = true] T
-    HappensAt Start [stopped Vessel = true] T
+    HappensAt Start [gap Vessel = true] T
+
+> InitiatedAt [underWay Vessel = true] T
+    HappensAt [velocity Vessel Speed Heading] T
+    Not HappensAt [gap_start Vessel] T
+    ThresholdGreater Speed 2.7
+    ThresholdLess Speed 48.6
+
+> TerminatedAt [underWay Vessel = true] T
+    HappensAt [velocity Vessel Speed Heading] T
+    ThresholdLess Speed 2.7
+
+> TerminatedAt [underWay Vessel = true] T
+    HappensAt [velocity Vessel Speed Heading] T
+    ThresholdGreater Speed 48.6
+
+> InitiatedAt [gap Vessel = true] T
+    HappensAt [gap_start Vessel] T
+    Not HappensAt [gap_end Vessel] T
+
+> TerminatedAt [gap Vessel = true] T
+    HappensAt [gap_end Vessel] T
+
+> InitiatedAt [potentialAground Vessel = true] T
+    HappensAt [velocity Vessel Speed Heading] T
+    Not HappensAt [gap_start Vessel] T
+    ThresholdLess Speed 0.005
+
+> TerminatedAt [potentialAground Vessel = true] T
+    HappensAt [velocity Vessel Speed Heading] T
+    ThresholdLess Speed 0.005
+
+> TerminatedAt [potentialAground Vessel = true] T
+    HappensAt [velocity Vessel Speed Heading] T
+    ThresholdGreater Speed 0.005
+
+> HoldsFor [aground Vessel = true] T
+    HoldsFor [potentialAground Vessel = true] I
+    IntDurGreater I 3600
+
+> InitiatedAt [anchor Vessel = true] T
+    HappensAt [velocity Vessel Speed Heading] T
+    Not HappensAt [gap_start Vessel] T
+    ThresholdLess Speed 0.2
+
+> TerminatedAt [anchor Vessel = true] T
+    HappensAt Start [gap Vessel = true] T
+
+> TerminatedAt [anchor Vessel = true] T
+    HappensAt [velocity Vessel Speed Heading] T
+    ThresholdGreater Speed 0.2
+
+> HoldsFor [atAnchor Vessel = true] I
+    HoldsFor [anchor Vessel = true] I1
+    HoldsFor [aground Vessel = true] I2
+    Relative_Complement_All I1 [I2] I
+    IntDurGreater I 1800
+
+> InitiatedAt [trawlSpeed Vessel = true] T
+    IsFishingVessel Vessel
+    HappensAt [velocity Vessel Speed Heading] T
+    Not HappensAt [gap_start Vessel] T
+    HappensAt [coord Vessel Lon Lat] T
+    NotNearPorts Lon Lat
+    ThresholdLess Speed 9.0
+    ThresholdGreater Speed 1.0
+
+> TerminatedAt [trawlSpeed Vessel = true] T
+    HappensAt [velocity Vessel Speed Heading] T
+    ThresholdGreater Speed 9.0
+
+> TerminatedAt [trawlSpeed Vessel = true] T
+    HappensAt [coord Vessel Lon Lat] T
+    NearPorts Lon Lat
+
+> TerminatedAt [trawlSpeed Vessel = true] T
+    HappensAt Start [gap Vessel = true] T
+
+> InitiatedAt [travelSpeed Vessel = true] T
+    HappensAt [velocity Vessel Speed _Heading] T
+    IsAtTravelSpeed Vessel Speed
+
+> TerminatedAt [travelSpeed Vessel = true] T
+    HappensAt [velocity Vessel Speed _Heading] T
+    NotAtTravelSpeed Vessel Speed
+
+> TerminatedAt [travelSpeed Vessel = true] T
+    HappensAt Start [gap Vessel = true] T
+
+> InitiatedAt [travel Vessel = true] T
+    HappensAt [coord Vessel Lon Lat] T
+    HoldsAt [travelSpeed Vessel = true] T
+
+> TerminatedAt [travel Vessel = true] T
+    HappensAt [coord Vessel Lon Lat] T
+    Not HoldsAt [travelSpeed Vessel = true] T
+
+> TerminatedAt [travel Vessel = true] T
+    HappensAt [change_in_heading Vessel] T
+
+> TerminatedAt [travel Vessel = true] T
+    HappensAt Start [gap Vessel = true] T
+
+> TerminatedAt [travel Vessel = true] T
+    HappensAt End [travelSpeed Vessel = true] T
+
+> InitiatedAt [tugging Vessel1 Vessel2 = true] T
+    HappensAt [velocity Vessel1 Speed1 Heading1] T
+    HappensAt [near Vessel1 Vessel2] T
+    HappensAt [velocity Vessel2 Speed2 Heading2] T
+    Not HappensAt [gap_start Vessel1] T
+    Not HappensAt [gap_start Vessel2] T
+
+> TerminatedAt [tugging Vessel1 Vessel2 = true] T
+    HappensAt Start [gap Vessel1 = true] T
+
+> TerminatedAt [tugging Vessel1 Vessel2 = true] T
+    HappensAt Start [gap Vessel2 = true] T
+
+> TerminatedAt [tugging Vessel1 Vessel2 = true] T
+    HappensAt Start [stopped Vessel1 = true] T
+
+> TerminatedAt [tugging Vessel1 Vessel2 = true] T
+    HappensAt Start [stopped Vessel2 = true] T
+
+> TerminatedAt [tugging Vessel1 Vessel2 = true] T
+    Not HappensAt [near Vessel1 Vessel2 = true] T

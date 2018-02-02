@@ -1,12 +1,12 @@
 package RTEC.Execute
 
-import java.util.{Collections, Properties}
+import java.util.{Collections, Properties, UUID}
 
 import scala.collection.JavaConverters._
 import RTEC.Data
 import RTEC.Data.ExtraLogicReasoning
 import integrated._
-import org.apache.kafka.clients.consumer.KafkaConsumer
+import org.apache.kafka.clients.consumer.{ConsumerConfig, KafkaConsumer}
 import org.apache.kafka.clients.producer.{KafkaProducer, ProducerRecord}
 
 /**
@@ -25,6 +25,14 @@ object WindowHandler {
   private var _previousWindowEntities: Map[String, Iterable[Seq[String]]] = Map()
   private var projections: Map[String,Map[Long,(Seq[String], Seq[String])]] = Map()
   private var proximity: Map[(String,String),Seq[(Long,Long)]] = Map()
+  val annotation = Map("StoppedInit" -> "stop_start",
+    "StoppedEnd" -> "stop_end",
+    "SlowMotionStart" -> "slow_motion_start",
+    "SlowMotionEnd" -> "slow_motion_end",
+    "GapEnd" -> "gap_end",
+    "HeadingChange" -> "change_in_heading",
+    "SpeedChangeStart" -> "change_in_speed_start",
+    "SpeedChangeEnd" -> "change_in_speed_end")
 
   /**
     * Sets the parameters below
@@ -53,9 +61,11 @@ object WindowHandler {
       ExtraLogicReasoning.readPorts(s"$inputDir/static_data/ports.csv")
       ExtraLogicReasoning.readGrid(s"$inputDir/static_data/grid.csv")
       ExtraLogicReasoning.readPortsPerCell(s"$inputDir/static_data/ports_per_cell.csv")
-      ExtraLogicReasoning.readRelevantAreas(s"$inputDir/static_data/all_areas/areas.csv")
-      ExtraLogicReasoning.readPolygons(s"$inputDir/static_data/all_areas/polygons.csv")
-      ExtraLogicReasoning.readSpeedLimits(s"$inputDir/static_data/all_areas/areas_speed_limits.csv")
+      //ExtraLogicReasoning.readRelevantAreas(s"$inputDir/static_data/all_areas/areas.csv")
+      //ExtraLogicReasoning.readPolygons(s"$inputDir/static_data/all_areas/polygons.csv")
+      //ExtraLogicReasoning.readSpeedLimits(s"$inputDir/static_data/all_areas/areas_speed_limits.csv")
+      ExtraLogicReasoning.readVesselTypes(s"$inputDir/static_data/vessel_types.csv")
+      ExtraLogicReasoning.readSpeedsPerType(s"$inputDir/static_data/type_speeds.csv")
     }
     catch {
       case e: Exception => println(s"Warning (maritime domain): ${e.getMessage}")
@@ -73,44 +83,53 @@ object WindowHandler {
     var batch = Vector.empty[String]
     var batch_tmp = Vector.empty[String]
 
-    val TOPIC="sample_rdfizer_topic2"
+    //val TOPIC="sample_rdfizer_topic2"
+    val TOPIC="ais_near_ais_final_first"
 
-    val  props = new Properties()
+    val props = new Properties()
     props.put("bootstrap.servers", "192.168.1.1:9092,192.168.1.2:9092,192.168.1.3:9092")
 
     props.put("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer")
     props.put("value.deserializer", classOf[ST_RDF_KryoSerializer].getName)
-    props.put("group.id", "rdfizer_group")
+    //props.put("group.id", "rdfizer_group")
+    props.put(ConsumerConfig.GROUP_ID_CONFIG, UUID.randomUUID().toString())
+    props.put(ConsumerConfig.CLIENT_ID_CONFIG, "rdfizer_group")
+    props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest")
 
     val consumer = new KafkaConsumer[String, ST_RDF](props)
 
     consumer.subscribe(Collections.singletonList(TOPIC))
 
     while (true) {
+      //println("I entered")
       val records = consumer.poll(10000)
       for (record <- records.asScala) {
-        val annotated = convertRDFPart(record.value)
-        //println(annotated)
-        val currentEventTime = record.value.time1/1000
-        if (batchLimit == 0L) batchLimit = currentEventTime + slidingStep
-        if (currentEventTime <= batchLimit) {
-          // until upper limit is reached store to batch
-          batch ++= annotated
-          //println(batch)
-        }
-        else {
-          numWindows += 1L
-          val lowerLimit = batchLimit - windowSize
-          // drop any leftovers from previous window
-          batch = batch.dropWhile(getEventTime(_) <= lowerLimit)
-          //if (getEventTime(batch.head) > batchLimit) batch_tmp = Vector() else batch_tmp = batch
-          println(s"ER: ($lowerLimit - $batchLimit]")
+        if (validEvent(record.value.rdfPart)) {
+          //println(record.value.rdfPart)
+          val annotated = convertRDFPart(record.value)
+          //println(annotated)
+          //val currentEventTime = record.value.time1 / 1000
+          val currentEventTime = annotated._2
+          if (batchLimit == 0L) batchLimit = currentEventTime + slidingStep
+          if (currentEventTime <= batchLimit) {
+            // until upper limit is reached store to batch
+            batch ++= annotated._1
+            //println(batch)
+          }
+          else {
+            numWindows += 1L
+            val lowerLimit = batchLimit - windowSize
+            // drop any leftovers from previous window
+            batch = batch.dropWhile(getEventTime(_) <= lowerLimit)
+            //if (getEventTime(batch.head) > batchLimit) batch_tmp = Vector() else batch_tmp = batch
+            println(s"ER: ($lowerLimit - $batchLimit]")
 
-          //batchSpatialPreprocessing(batch_tmp,batchLimit,lowerLimit, lastTime)
-          batchEventRecognition(batch, batchLimit, lowerLimit, clock, staticData, numWindows)
+            //batchSpatialPreprocessing(batch_tmp,batchLimit,lowerLimit, lastTime)
+            batchEventRecognition(batch, batchLimit, lowerLimit, clock, staticData, numWindows)
 
-          batch ++= annotated
-          batchLimit += slidingStep
+            batch ++= annotated._1
+            batchLimit += slidingStep
+          }
         }
       }
     }
@@ -168,7 +187,8 @@ object WindowHandler {
     sendToKafka(recResults._3)
     /*val fd = new java.io.FileWriter(outputFile, true)
     fd.write(recResults._3)
-    fd.close*/
+    fd.close
+    println(recResults._3)*/
 
 
     CEs += windowReasoner.numComplexEvents
@@ -217,6 +237,7 @@ object WindowHandler {
     * @return
     */
   private def parseStreamBatch(batch: Vector[String]) = {
+    //println(batch.mkString("\n"))
     SDEs += batch.size
     // parse real time input
     Reader.ParseRealTimeInput.get(batch.mkString) match {
@@ -225,7 +246,12 @@ object WindowHandler {
     }
   }
 
-  private def convertRDFPart(input: ST_RDF): Vector[String] = {
+  /*private def convertRDFPart(input: ST_RDF): Vector[String] = {
+
+    println(input.longitude)
+    println(input.latitude)
+    println(input.time1)
+    println(input.rdfPart)
 
     val annotation = Map("stoppedinit" -> "stop_start",
       "stoppedend" -> "stop_end",
@@ -250,7 +276,7 @@ object WindowHandler {
     val lat = input.latitude
 
     Vector(s"HappensAt [$name $id] $ts",s"HappensAt [coord $id $lon $lat] $ts",s"HappensAt [velocity $id $speed $heading] $ts")
-  }
+  }*/
 
   def sendToKafka(output: String): Unit = {
     val  props = new Properties()
@@ -267,6 +293,69 @@ object WindowHandler {
     producer.send(record)
 
     producer.close
+  }
+
+  private def validEvent(input: String): Boolean = {
+    if (input.contains("within") || input.contains("nearTo")) {
+      true
+    }
+    else if (input.replaceAll(" ","").split("[:]").filter(annotation.contains(_)).length > 0) {
+      true
+    }
+    else false
+  }
+
+  private def convertRDFPart(input: ST_RDF): (Vector[String],Long) = {
+
+    if (input.rdfPart.contains("within")) {
+      val parts = input.rdfPart.split(" ").filterNot(_ == ".").takeRight(3)
+      val vesselInfo = parts.head.split("[#]").last.split("[_]")
+      val areaId = "areaId_" + parts.last.split("[#]").last.split("[\\\\]").head.dropRight(1)
+
+      val id = vesselInfo(1)
+      val ts = vesselInfo(2).toLong/1000
+      val lon = vesselInfo(3).toDouble
+      val lat = vesselInfo(4).split("[\\\\]").head.dropRight(1).toDouble
+
+      (Vector(s"HappensAt [within $id $areaId] $ts",s"HappensAt [coord $id $lon $lat] $ts"),ts)
+    }
+    else if (input.rdfPart.contains("nearTo")) {
+      val parts = input.rdfPart.split(" ").filterNot(_ == ".").takeRight(3)
+
+      val vessel1 = parts.head.split("[#]").last.split("[_]")
+      val id1 = vessel1(1)
+      val ts1 = vessel1(2).toLong/1000
+      val lon1 = vessel1(3).toDouble
+      val lat1= vessel1(4).split("[\\\\]").head.dropRight(1).toDouble
+
+      val vessel2 = parts.last.split("[#]").last.split("[_]")
+      val id2 = vessel2(1)
+      val ts2 = vessel2(2).toLong/1000
+      val lon2 = vessel2(3).toDouble
+      val lat2 = vessel2(4).split("[\\\\]").head.dropRight(1).toDouble
+
+      (Vector(s"HappensAt [near $id1 $id2] $ts1",s"HappensAt [coord $id1 $lon1 $lat1] $ts1",s"HappensAt [coord $id2 $lon2 $lat2] $ts2"),ts1)
+    }
+    else {
+      val parts = input.rdfPart.replaceAll("[;]","").split(":").filterNot(s => s.isEmpty || s == ".")
+      val events = input.rdfPart.replaceAll(" ","").split("[:]").filter(annotation.contains(_))
+
+      val vesselInfo = parts.filter(_.contains("node_")).head.split("[_]")
+      val info = parts.filter(x => x.contains("hasSpeed") || x.contains("hasHeading")).take(2)
+
+      val id = vesselInfo(1)
+      val ts = vesselInfo(2).toLong/1000
+      val lon = vesselInfo(3).toDouble
+      val lat = vesselInfo(4).replace(" .","").dropRight(1).toDouble
+      val speed = info.last.replace("hasSpeed ","").replace("^^unit","").replace("\"","").toDouble*3.6
+      val heading = info.head.replace("hasHeading ","").replace("^^unit","").replace("\"","").toDouble
+
+      (events.map{
+        x =>
+          val name = annotation(x)
+          s"HappensAt [$name $id] $ts"
+      }.toVector ++ Vector(s"HappensAt [coord $id $lon $lat] $ts",s"HappensAt [velocity $id $speed $heading] $ts"),ts)
+    }
   }
 
 }
