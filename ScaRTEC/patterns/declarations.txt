@@ -4,7 +4,6 @@ InstantEvents {
     Input: [change_in_speed_start 1]
     Input: [change_in_speed_end 1]
     Input: [gap_end 1]
-    Input: [gap_start 1]
     Input: [change_in_heading 1]
     Input: [stop_start 1]
     Input: [stop_end 1]
@@ -15,7 +14,6 @@ InstantEvents {
 
     Output: [highSpeedIn 3]
     Output: [loitering 2]
-    Output: [trawling 2]
     Output: [rendezVous 3]
 }
 
@@ -25,25 +23,7 @@ Fluents {
 
     Simple: [lowSpeed 1 = true]
 
-    Simple: [underWay 1 = true]
-
-    Simple: [gap 1 = true]
-
-    Simple: [potentialAground 1 = true]
-
-    Simple: [anchor 1 = true]
-
-    Simple: [trawlSpeed 1 = true]
-
-    Simple: [travelSpeed 1 = true]
-
-    Simple: [travel 1 = true]
-
-    Simple: [tugging 2 = true]
-
-    OutputSD: [aground 1 = true]
-
-    OutputSD: [atAnchor 1 = true]
+    Simple: [sailing 1 = true]
 
 }
 
@@ -95,26 +75,13 @@ BuiltEntities {
     Rend 3:
         [VesselProx() (true)]
 
-    Pairs 2:
-        [VesselProx()]
-
 }
 
 CachingOrder {
-    [gap 1 = _]         -> VesselId
     [stopped 1 = _]         -> VesselId
     [lowSpeed 1 = _]        -> VesselId
-    [underWay 1 = _]         -> VesselId
-    [potentialAground 1 = _] -> VesselId
-    [aground 1 = true]       -> VesselId
-    [anchor 1 = _]           -> VesselId
-    [atAnchor 1 = true]       -> VesselId
-    [trawlSpeed 1 = _]           -> VesselId
-    [travelSpeed 1 = _]           -> VesselId
-    [travel 1 = _]           -> VesselId
-    [tugging 2 = _]           -> Pairs
+    [sailing 1 = _]         -> VesselId
     [highSpeedIn 3]         -> HighSpeed
     [loitering 2]           -> Loit
-    [trawling 2]           -> Loit
     [rendezVous 3]          -> Rend
 }

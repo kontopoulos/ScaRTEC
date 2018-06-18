@@ -12,9 +12,12 @@ import java.io.Closeable;
 import java.util.Map;
 
 /**
- * Created by ikon on 14/7/2017.
+ * Created by aglenis on 4/27/17.
  */
+
 public class ST_RDF_KryoSerializer implements Closeable, AutoCloseable, Serializer<ST_RDF>, Deserializer<ST_RDF> {
+
+
     private ThreadLocal<Kryo> kryos = new ThreadLocal<Kryo>() {
         protected Kryo initialValue() {
             Kryo kryo = new Kryo();
@@ -59,6 +62,7 @@ public class ST_RDF_KryoSerializer implements Closeable, AutoCloseable, Serializ
             output.writeDouble(customer.height1);
             output.writeLong(customer.time1,true);
             output.writeString(customer.idToEncode);
+            output.writeLong(customer.ingestionTimestamp,true);
         }
 
         @Override
@@ -70,8 +74,9 @@ public class ST_RDF_KryoSerializer implements Closeable, AutoCloseable, Serializ
             double height1 = input.readDouble();
             long time1 = input.readLong(true);
             String idToEncode = input.readString();
+            long ingestionTimestamp = input.readLong(true);
 
-            return new ST_RDF(hasSpatiotemporal,rdfPart,latitude,longitude,height1,time1,idToEncode);
+            return new ST_RDF(hasSpatiotemporal,rdfPart,latitude,longitude,height1,time1,idToEncode,ingestionTimestamp);
         }
     }
 }

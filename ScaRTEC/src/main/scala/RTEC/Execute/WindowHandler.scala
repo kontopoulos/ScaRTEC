@@ -7,7 +7,6 @@ import RTEC.Data
 import RTEC.Data.ExtraLogicReasoning
 import integrated._
 import org.apache.kafka.clients.consumer.{ConsumerConfig, KafkaConsumer}
-import org.apache.kafka.clients.producer.{KafkaProducer, ProducerRecord}
 
 /**
   * Created by ikon on 30-Nov-16.
@@ -33,6 +32,9 @@ object WindowHandler {
     "HeadingChange" -> "change_in_heading",
     "SpeedChangeStart" -> "change_in_speed_start",
     "SpeedChangeEnd" -> "change_in_speed_end")
+
+  // key -> (event name,arity), value -> (arguments,earlier_timestamp)
+  private var eventTimestamps: Map[(String,Int), Map[Seq[String],Long]] = Map()
 
   /**
     * Sets the parameters below
@@ -63,9 +65,7 @@ object WindowHandler {
       ExtraLogicReasoning.readPortsPerCell(s"$inputDir/static_data/ports_per_cell.csv")
       //ExtraLogicReasoning.readRelevantAreas(s"$inputDir/static_data/all_areas/areas.csv")
       //ExtraLogicReasoning.readPolygons(s"$inputDir/static_data/all_areas/polygons.csv")
-      //ExtraLogicReasoning.readSpeedLimits(s"$inputDir/static_data/all_areas/areas_speed_limits.csv")
-      ExtraLogicReasoning.readVesselTypes(s"$inputDir/static_data/vessel_types.csv")
-      ExtraLogicReasoning.readSpeedsPerType(s"$inputDir/static_data/type_speeds.csv")
+      ExtraLogicReasoning.readSpeedLimits(s"$inputDir/static_data/all_areas/areas_speed_limits.csv")
     }
     catch {
       case e: Exception => println(s"Warning (maritime domain): ${e.getMessage}")
@@ -91,6 +91,7 @@ object WindowHandler {
 
     props.put("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer")
     props.put("value.deserializer", classOf[ST_RDF_KryoSerializer].getName)
+    props.put(ConsumerConfig.INTERCEPTOR_CLASSES_CONFIG,classOf[ST_RDFConsumerInterceptor].getName)
     //props.put("group.id", "rdfizer_group")
     props.put(ConsumerConfig.GROUP_ID_CONFIG, UUID.randomUUID().toString())
     props.put(ConsumerConfig.CLIENT_ID_CONFIG, "rdfizer_group")
@@ -106,7 +107,14 @@ object WindowHandler {
       for (record <- records.asScala) {
         if (validEvent(record.value.rdfPart)) {
           //println(record.value.rdfPart)
-          val annotated = convertRDFPart(record.value)
+          val annotated = convertRDFPart(record.value) // (events,ts,ingestionTimestamp)
+
+
+
+
+          // key -> (event name,arity), value -> (arguments,timestamp)
+          //private var eventTimestamps: Map[(String,Int), Map[Seq[String],Set[Long]]] = Map()
+
           //println(annotated)
           //val currentEventTime = record.value.time1 / 1000
           val currentEventTime = annotated._2
@@ -114,6 +122,8 @@ object WindowHandler {
           if (currentEventTime <= batchLimit) {
             // until upper limit is reached store to batch
             batch ++= annotated._1
+
+            storeIngestionTimestamps(annotated)
             //println(batch)
           }
           else {
@@ -127,6 +137,8 @@ object WindowHandler {
             //batchSpatialPreprocessing(batch_tmp,batchLimit,lowerLimit, lastTime)
             batchEventRecognition(batch, batchLimit, lowerLimit, clock, staticData, numWindows)
 
+            eventTimestamps = Map() // empty map for new window ingestion timestamps
+            storeIngestionTimestamps(annotated)
             batch ++= annotated._1
             batchLimit += slidingStep
           }
@@ -161,6 +173,30 @@ object WindowHandler {
     fd.close()
   }
 
+  private def storeIngestionTimestamps(annotated: (Vector[String],Long,Long)) = {
+    val partsOfEvent = annotated._1.head.split(" ")
+    val name = partsOfEvent(1).drop(1).replaceAll("\\[","")
+    val arguments = partsOfEvent.drop(2).dropRight(1).map(_.replaceAll("\\]","")).toSeq
+    val arity = arguments.size
+
+    // store the ingestion timestamps, keep only the earliest chronologically
+    eventTimestamps.get(name,arity) match {
+      case Some(args) => {
+        args.get(arguments) match {
+          case Some(t) =>
+          case None => {
+            var updated = args
+            updated += (arguments -> annotated._3)
+            eventTimestamps += ((name,arity) -> updated)
+          }
+        }
+      }
+      case None => {
+        eventTimestamps += ((name,arity) -> Map(arguments -> annotated._3))
+      }
+    }
+  }
+
 
   /**
     * Performs event recognition for current batch
@@ -180,15 +216,15 @@ object WindowHandler {
     windowReasoner.updateCurrentWindowEntities(_previousWindowEntities)
 
     // Start event recognition
-    val recResults = windowReasoner.run(staticData, input, outputFile, lowerLimit, batchLimit, clock)
+    val recResults = windowReasoner.run(staticData, input, outputFile, lowerLimit, batchLimit, clock, eventTimestamps)
     if (currentWindow != 1L) totalRecognitionTime += recResults._1
 
     // send recognition results to kafka topic
-    sendToKafka(recResults._3)
-    /*val fd = new java.io.FileWriter(outputFile, true)
+    //sendToKafka(recResults._3)
+    val fd = new java.io.FileWriter(outputFile, true)
     fd.write(recResults._3)
     fd.close
-    println(recResults._3)*/
+    println(recResults._3)
 
 
     CEs += windowReasoner.numComplexEvents
@@ -278,23 +314,6 @@ object WindowHandler {
     Vector(s"HappensAt [$name $id] $ts",s"HappensAt [coord $id $lon $lat] $ts",s"HappensAt [velocity $id $speed $heading] $ts")
   }*/
 
-  def sendToKafka(output: String): Unit = {
-    val  props = new Properties()
-    props.put("bootstrap.servers", "192.168.1.1:9092,192.168.1.2:9092,192.168.1.3:9092")
-
-    props.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer")
-    props.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer")
-
-    val producer = new KafkaProducer[String, String](props)
-
-    val TOPIC="sample_cer_topic"
-
-    val record = new ProducerRecord(TOPIC, "localhost", output)
-    producer.send(record)
-
-    producer.close
-  }
-
   private def validEvent(input: String): Boolean = {
     if (input.contains("within") || input.contains("nearTo")) {
       true
@@ -305,7 +324,7 @@ object WindowHandler {
     else false
   }
 
-  private def convertRDFPart(input: ST_RDF): (Vector[String],Long) = {
+  private def convertRDFPart(input: ST_RDF): (Vector[String],Long,Long) = {
 
     if (input.rdfPart.contains("within")) {
       val parts = input.rdfPart.split(" ").filterNot(_ == ".").takeRight(3)
@@ -317,7 +336,7 @@ object WindowHandler {
       val lon = vesselInfo(3).toDouble
       val lat = vesselInfo(4).split("[\\\\]").head.dropRight(1).toDouble
 
-      (Vector(s"HappensAt [within $id $areaId] $ts",s"HappensAt [coord $id $lon $lat] $ts"),ts)
+      (Vector(s"HappensAt [within $id $areaId] $ts",s"HappensAt [coord $id $lon $lat] $ts"),ts,input.getIngestionTimestamp)
     }
     else if (input.rdfPart.contains("nearTo")) {
       val parts = input.rdfPart.split(" ").filterNot(_ == ".").takeRight(3)
@@ -334,7 +353,7 @@ object WindowHandler {
       val lon2 = vessel2(3).toDouble
       val lat2 = vessel2(4).split("[\\\\]").head.dropRight(1).toDouble
 
-      (Vector(s"HappensAt [near $id1 $id2] $ts1",s"HappensAt [coord $id1 $lon1 $lat1] $ts1",s"HappensAt [coord $id2 $lon2 $lat2] $ts2"),ts1)
+      (Vector(s"HappensAt [near $id1 $id2] $ts1",s"HappensAt [coord $id1 $lon1 $lat1] $ts1",s"HappensAt [coord $id2 $lon2 $lat2] $ts2"),ts1,input.getIngestionTimestamp)
     }
     else {
       val parts = input.rdfPart.replaceAll("[;]","").split(":").filterNot(s => s.isEmpty || s == ".")
@@ -354,7 +373,7 @@ object WindowHandler {
         x =>
           val name = annotation(x)
           s"HappensAt [$name $id] $ts"
-      }.toVector ++ Vector(s"HappensAt [coord $id $lon $lat] $ts",s"HappensAt [velocity $id $speed $heading] $ts"),ts)
+      }.toVector ++ Vector(s"HappensAt [coord $id $lon $lat] $ts",s"HappensAt [velocity $id $speed $heading] $ts"),ts,input.getIngestionTimestamp)
     }
   }
 

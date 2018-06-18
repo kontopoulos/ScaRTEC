@@ -1,6 +1,11 @@
 package RTEC.Execute
 
+import java.util.Properties
+
+import RTEC.Data.HappensAtIE
 import RTEC._
+import integrated.{ComplexEvent, ComplexEventProducerInterceptor, ComplexEvent_KryoSerializer}
+import org.apache.kafka.clients.producer.{KafkaProducer, ProducerConfig, ProducerRecord}
 
 class Reasoner {
 
@@ -29,7 +34,7 @@ class Reasoner {
           input: (Seq[Reader.Main.InputHappensAt], Seq[Reader.Main.InputHoldsAt], Seq[Reader.Main.InputHoldsFor]),
           outputFile: String,
           start: Long, end: Long,
-          clock: Long): (Long,Long,String) = {
+          clock: Long, eventTimestamps: Map[(String,Int), Map[Seq[String],Long]] = Map()): (Long,Long,String) = {
 
     // Set shared parameters
     val iEMapping: Map[Data.InstantEventId, Data.IEType] = staticData._1
@@ -64,7 +69,7 @@ class Reasoner {
     val t = System.currentTimeMillis
 
     // Produce and update built events
-    processCE()
+    processCE(eventTimestamps)
     val e = System.currentTimeMillis
     val recognitionTime = e - s
 
@@ -74,7 +79,7 @@ class Reasoner {
     fd.close*/
 
     // return recognition time
-    (recognitionTime,(t-s),_windowDB.toJson)
+    (recognitionTime,(t-s),_windowDB.output)
   }
 
   private def processInput(): Unit = {
@@ -142,15 +147,27 @@ class Reasoner {
   /**
     * Complex Event Recognition
     */
-  private def processCE(): Unit = {
+  private def processCE(eventTimestamps: Map[(String,Int), Map[Seq[String],Long]] = Map()): Unit = {
     _windowDB.amalgamate(_nonTerminatedFluents)
     _cachingOrder foreach {
       case (iEId: Data.InstantEventId, entityId) =>
         // Case: Instant Event
         _iEPredicates foreach {
           case p: Data.IEPredicate if p.id == iEId =>
+            var name = ""
+            var arguments: Seq[String] = Seq()
+            var arity = 0
+            if (p.body.head.isInstanceOf[HappensAtIE]) { // find out which is the first low level event to be validated
+              val ha = p.body.head.asInstanceOf[HappensAtIE]
+              name = ha.id.name
+              arguments = ha.entity
+              arity = arguments.size
+            }
             val results: Iterable[((Data.InstantEventId, Seq[String]), Set[Long])] = p.validate(_windowDB, _entities(entityId))
             _windowDB.updateIE(results)
+            val ingestionTimestamp = eventTimestamps((name,arity))(arguments)
+            val ce = new ComplexEvent(_windowDB.toJson,ingestionTimestamp)
+            sendToKafka(ce)
           case _ =>
         }
 
@@ -164,12 +181,29 @@ class Reasoner {
         // separate terminatedAt predicates
         val (terminatedPredicates, restPredicates) = _fPredicates.partition(_.isInstanceOf[Data.TerminatedAtPredicate])
 
+        var name = ""
+        var arguments: Seq[String] = Seq()
+        var arity = 0
+
         restPredicates foreach {
           case p: Data.InitiatedAtPredicate =>
-            if (p.id == fluentId)
+            if (p.id == fluentId) {
+              if (p.body.head.isInstanceOf[HappensAtIE]) { // find out which is the first low level event to be validated
+                val ha = p.body.head.asInstanceOf[HappensAtIE]
+                name = ha.id.name
+                arguments = ha.entity
+                arity = arguments.size
+              }
               initiations ++= p.validate(_windowDB, _entities(entityId))
+            }
           case p: Data.SDFPredicate =>
             if (p.id == fluentId) {
+              if (p.body.head.isInstanceOf[HappensAtIE]) { // find out which is the first low level event to be validated
+                val ha = p.body.head.asInstanceOf[HappensAtIE]
+                name = ha.id.name
+                arguments = ha.entity
+                arity = arguments.size
+              }
               val result = p.validate(_windowDB, _entities(entityId))
               _windowDB.updateFluent(result, true)
             }
@@ -186,9 +220,30 @@ class Reasoner {
           val combined: Iterable[((Data.FluentId, Seq[String]), Data.Intervals)] = combineSF(initiations, terminations)
           _windowDB.updateFluent(combined, false)
         }
+        val ingestionTimestamp = eventTimestamps((name,arity))(arguments)
+        val ce = new ComplexEvent(_windowDB.toJson,ingestionTimestamp)
+        sendToKafka(ce)
     }
     retractFluents
     retractEntities
+  }
+
+  def sendToKafka(output: ComplexEvent): Unit = {
+    val  props = new Properties()
+    props.put("bootstrap.servers", "192.168.1.1:9092,192.168.1.2:9092,192.168.1.3:9092")
+
+    props.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer")
+    props.put("value.serializer", classOf[ComplexEvent_KryoSerializer].getName)
+    props.put(ProducerConfig.INTERCEPTOR_CLASSES_CONFIG,classOf[ComplexEventProducerInterceptor].getName)
+
+    val producer = new KafkaProducer[String, ComplexEvent](props)
+
+    val TOPIC="sample_cer_topic"
+
+    val record = new ProducerRecord(TOPIC, "localhost", output)
+    producer.send(record)
+
+    producer.close
   }
 
   private def combineSF(initiations: Iterable[((Data.FluentId, Seq[String]), Set[Long])], terminations: Iterable[((Data.FluentId, Seq[String]), Set[Long])]): Iterable[((Data.FluentId, Seq[String]), Data.Intervals)] = {

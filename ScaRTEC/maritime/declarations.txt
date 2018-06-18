@@ -1,0 +1,92 @@
+InstantEvents {
+    Input: [slow_motion_start 1]
+    Input: [slow_motion_end 1]
+    Input: [change_in_speed_start 1]
+    Input: [change_in_speed_end 1]
+    Input: [gap_start 1]
+    Input: [gap_end 1]
+    Input: [change_in_heading 1]
+    Input: [stop_start 1]
+    Input: [stop_end 1]
+    Input: [coord 3]
+    Input: [velocity 3]
+    Input: [isInArea 2]
+    Input: [leavesArea 2]
+}
+
+Fluents {
+    InputSD: [proximity 2 = true]
+
+    Simple: [stopped 1 = true]
+
+    Simple: [lowSpeed 1 = true]
+
+    Simple: [withinArea 2 = true]
+
+    Simple: [sailing 1 = true]
+
+    Simple: [loitering 1 = true]
+
+    Simple: [highSpeedIn 2 = true]
+
+    OutputSD: [rendezVouz 2 = true]
+}
+
+InputEntities {
+    Speed 1:
+        [slow_motion_start]
+        [slow_motion_end]
+        [change_in_speed_start]
+        [change_in_speed_end]
+
+    Gap 1:
+        [gap_start]
+        [gap_end]
+
+    Turn 1:
+        [change_in_heading]
+
+    Coord 3:
+        [coord]
+
+    Vel 3:
+        [velocity]
+
+    Area 2:
+        [isInArea]
+        [leavesArea]
+
+    VesselInput 1:
+        [stop_start]
+        [stop_end]
+
+    Vesselprox 2:
+        [proximity = true]
+}
+
+BuiltEntities {
+    VesselId 1:
+        [VesselInput()]
+        [Speed()]
+        [Gap()]
+        [Turn()]
+        [Coord(0,1)]
+        [Vel(0,1)]
+
+    VesselArea 2:
+        [Area()]
+
+    PairsProx 2:
+        [Vesselprox()]
+
+}
+
+CachingOrder {
+    [stopped 1 = _]         -> VesselId
+    [lowSpeed 1 = _]        -> VesselId
+    [withinArea 2 = _]      -> VesselArea
+    [sailing 1 = _]         -> VesselId
+    [loitering 1 = _]       -> VesselId
+    [highSpeedIn 2 = _]     -> VesselArea
+    [rendezVouz 2 = true]   -> PairsProx
+}

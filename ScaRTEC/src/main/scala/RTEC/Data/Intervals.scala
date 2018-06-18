@@ -166,7 +166,8 @@ case class Intervals(t: Vector[(Long, Long)]) {
     }
 
     def contains(x: Long): Boolean = {
-        t exists(interval => x >= interval._1 && x < interval._2)
+        val point = if (x == -1) Int.MaxValue else x
+        t exists(interval => point >= interval._1 && point < interval._2)
     }
 
     def startPoints: Set[Long] = t.map(_._1)(collection.breakOut)

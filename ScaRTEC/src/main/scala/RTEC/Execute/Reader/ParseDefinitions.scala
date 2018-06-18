@@ -109,18 +109,6 @@ object ParseDefinitions extends JavaTokenParsers {
     case (area ~ speed) => Data.InAreaSpeedLess(area, speed)
   }
 
-  private def isFishingVessel: Parser[Data.IsFishing] = "IsFishingVessel" ~> alphanumeric ^^ {
-    case (vessel) => Data.IsFishing(vessel)
-  }
-
-  private def isAtTravelSpeed: Parser[Data.IsAtTravelSpeed] = "IsAtTravelSpeed" ~> alphanumeric ~ alphanumeric ^^ {
-    case (vessel ~ speed) => Data.IsAtTravelSpeed(vessel,speed)
-  }
-
-  private def notAtTravelSpeed: Parser[Data.NotAtTravelSpeed] = "NotAtTravelSpeed" ~> alphanumeric ~ alphanumeric ^^ {
-    case (vessel ~ speed) => Data.NotAtTravelSpeed(vessel,speed)
-  }
-
   /* ============ Maritime Domain ============ */
 
   // HappensAt | HoldsFor | Union_All | Intersect_All | Relative_Complement_All
