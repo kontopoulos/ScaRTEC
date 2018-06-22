@@ -141,5 +141,7 @@ object Application extends App {
 
   }
 
+  // wget https://www.dropbox.com/s/8szh4mao0fj5kw9/ScaRTEC.jar
+
 }
 

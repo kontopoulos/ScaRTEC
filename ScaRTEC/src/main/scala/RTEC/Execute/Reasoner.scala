@@ -220,7 +220,7 @@ class Reasoner {
           val combined: Iterable[((Data.FluentId, Seq[String]), Data.Intervals)] = combineSF(initiations, terminations)
           _windowDB.updateFluent(combined, false)
         }
-        val ingestionTimestamp = eventTimestamps((name,arity))(arguments)
+        val ingestionTimestamp = eventTimestamps((name,arity)).minBy(_._2)._2
         val ce = new ComplexEvent(_windowDB.toJson,ingestionTimestamp)
         sendToKafka(ce)
     }

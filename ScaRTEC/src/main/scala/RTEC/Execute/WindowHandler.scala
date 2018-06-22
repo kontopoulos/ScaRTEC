@@ -66,6 +66,8 @@ object WindowHandler {
       //ExtraLogicReasoning.readRelevantAreas(s"$inputDir/static_data/all_areas/areas.csv")
       //ExtraLogicReasoning.readPolygons(s"$inputDir/static_data/all_areas/polygons.csv")
       ExtraLogicReasoning.readSpeedLimits(s"$inputDir/static_data/all_areas/areas_speed_limits.csv")
+      ExtraLogicReasoning.readVesselTypes(s"$inputDir/static_data/vessel_types.csv")
+      ExtraLogicReasoning.readSpeedsPerType(s"$inputDir/static_data/type_speeds.csv")
     }
     catch {
       case e: Exception => println(s"Warning (maritime domain): ${e.getMessage}")
@@ -82,6 +84,8 @@ object WindowHandler {
     // holds the data of the batch
     var batch = Vector.empty[String]
     var batch_tmp = Vector.empty[String]
+
+    println("Entered rec")
 
     //val TOPIC="sample_rdfizer_topic2"
     val TOPIC="ais_near_ais_final_first"
@@ -101,19 +105,17 @@ object WindowHandler {
 
     consumer.subscribe(Collections.singletonList(TOPIC))
 
+    println("Subscribed ???")
+
     while (true) {
       //println("I entered")
       val records = consumer.poll(10000)
       for (record <- records.asScala) {
+        println("I read a record...")
         if (validEvent(record.value.rdfPart)) {
+          println("read valid record...")
           //println(record.value.rdfPart)
           val annotated = convertRDFPart(record.value) // (events,ts,ingestionTimestamp)
-
-
-
-
-          // key -> (event name,arity), value -> (arguments,timestamp)
-          //private var eventTimestamps: Map[(String,Int), Map[Seq[String],Set[Long]]] = Map()
 
           //println(annotated)
           //val currentEventTime = record.value.time1 / 1000

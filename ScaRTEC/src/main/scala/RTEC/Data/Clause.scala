@@ -2,6 +2,8 @@ package RTEC.Data
 
 import RTEC.Execute.EventDB
 import RTEC._
+import com.vividsolutions.jts.geom.{Coordinate, GeometryFactory, Point}
+import com.vividsolutions.jts.operation.distance.DistanceOp
 
 import scala.collection.mutable
 
@@ -203,6 +205,68 @@ case class RelativeComplementAll(baseInput: String, excludedInput: Seq[String], 
 
 /* ====================== Maritime Domain ====================== */
 
+case class IsFishing(vesselId: String) extends BodyClause {
+  override def replaceLabel(target: String, newLabel: String): IsFishing = this
+
+  override def resolve(data: Execute.EventDB, dict: Iterable[Predicate.GroundingDict]): Iterable[Predicate.GroundingDict] = {
+    dict
+      .filter {
+        case (entities, values, intervals, timePoints) =>
+          val id = values(vesselId)
+          ExtraLogicReasoning.getVesselTypes.get(id) match {
+            case Some(v) => {
+              v == "fishing"
+            }
+            case None => {
+              false
+            }
+          }
+      }
+  }
+}
+
+case class IsAtTravelSpeed(vessel: String, speed: String) extends BodyClause {
+  override def replaceLabel(target: String, newLabel: String): IsAtTravelSpeed = this
+
+  override def resolve(data: Execute.EventDB, dict: Iterable[Predicate.GroundingDict]): Iterable[Predicate.GroundingDict] = {
+    dict.filter{
+      v =>
+        val velocity = v._2(speed).toDouble
+        val id = v._2(vessel)
+        val (min,max,avg) = ExtraLogicReasoning.getVesselTypes.get(id) match {
+          case Some(vType) => {
+            ExtraLogicReasoning.getSpeedTypes(vType)
+          }
+          case None => {
+            ExtraLogicReasoning.getSpeedTypes("other")
+          }
+        }
+        velocity < max && velocity > min
+    }
+  }
+}
+
+case class NotAtTravelSpeed(vessel: String, speed: String) extends BodyClause {
+  override def replaceLabel(target: String, newLabel: String): NotAtTravelSpeed = this
+
+  override def resolve(data: Execute.EventDB, dict: Iterable[Predicate.GroundingDict]): Iterable[Predicate.GroundingDict] = {
+    dict.filter{
+      v =>
+        val velocity = v._2(speed).toDouble
+        val id = v._2(vessel)
+        val (min,max,avg) = ExtraLogicReasoning.getVesselTypes.get(id) match {
+          case Some(vType) => {
+            ExtraLogicReasoning.getSpeedTypes(vType)
+          }
+          case None => {
+            ExtraLogicReasoning.getSpeedTypes("other")
+          }
+        }
+        velocity > max && velocity < min
+    }
+  }
+}
+
 case class NotNearPorts(lon: String, lat: String) extends BodyClause {
   override def replaceLabel(target: String, newLabel: String): NotNearPorts = this
 
@@ -353,6 +417,102 @@ case class IntDurGreater(inInterval: String, duration: String) extends BodyClaus
 }
 
 /* ====================== Maritime Domain ====================== */
+
+/* ====================== Aviation Domain ====================== */
+
+case class CloseToModelCruise(aircraftId: String, altitude: String) extends BodyClause {
+  override def replaceLabel(target: String, newLabel: String): CloseToModelCruise = this
+
+  override def resolve(data: EventDB, dict: Iterable[(Seq[String], Map[String, String], Map[String, Intervals], Map[String, Set[Long]])]): Iterable[(Seq[String], Map[String, String], Map[String, Intervals], Map[String, Set[Long]])] = {
+    dict.filter(d => d._2(altitude).toDouble > (ExtraLogicReasoning.getFlightLevel(d._2(aircraftId)) - 5000))
+  }
+}
+
+case class DecideTopOfClimb(aircraftId: String, altitude:String) extends BodyClause {
+  override def replaceLabel(target: String, newLabel: String): DecideTopOfClimb = this
+
+  override def resolve(data: Execute.EventDB, dict: Iterable[Predicate.GroundingDict]): Iterable[Predicate.GroundingDict] = {
+
+    ExtraLogicReasoning.getTopOfC.filter(d => d._2(altitude).toDouble >
+      (ExtraLogicReasoning.getFlightLevel(d._2(aircraftId)) - 5000))
+
+  }
+}
+
+case class DecideTopOfDescent(aircraftId: String, altitude:String) extends BodyClause {
+  override def replaceLabel(target: String, newLabel: String): DecideTopOfDescent = this
+
+  override def resolve(data: Execute.EventDB, dict: Iterable[Predicate.GroundingDict]): Iterable[Predicate.GroundingDict] = {
+
+    ExtraLogicReasoning.getTopOfD.filter(d => d._2(altitude).toDouble >
+      (ExtraLogicReasoning.getFlightLevel(d._2(aircraftId)) - 5000))
+
+  }
+}
+
+case class CalcAngles(aircraftId: String, altitude:String, longitude:String, latitude:String, speed: String) extends BodyClause {
+  override def replaceLabel(target: String, newLabel: String): CalcAngles = this
+
+  override def resolve(data: Execute.EventDB, dict: Iterable[Predicate.GroundingDict]): Iterable[Predicate.GroundingDict] = {
+
+    val trip = dict.groupBy(_._1.head).filterNot(v => ExtraLogicReasoning.getRecTopOfDescent(v._1))
+      .mapValues(_.toSeq.sortBy(_._4.values.head.head)
+        .map(v=>(v._2(longitude),v._2(latitude),v._2(altitude),v._2(speed),v._4.values.head.head)).sliding(5).toList)
+
+    //println(trip)
+
+    /*ExtraLogicReasoning.constructTopOfCD(trip.map(v=>(v._1,ExtraLogicReasoning.computeAngle3d(v._1,v._2))).filter(_._2.nonEmpty),
+      dict, aircraftId,altitude)*/
+
+    ExtraLogicReasoning.constructTopOfCD(trip.map(v=>(v._1,ExtraLogicReasoning.computeAngle2d(v._1,v._2))).filter(_._2.nonEmpty),
+      dict, aircraftId, altitude)
+
+  }
+}
+
+case class AwayFromRoute(aircraftId: String, longitude:String, latitude:String) extends BodyClause {
+  override def replaceLabel(target: String, newLabel: String): AwayFromRoute = this
+
+  override def resolve(data: Execute.EventDB, dict: Iterable[Predicate.GroundingDict]): Iterable[Predicate.GroundingDict] = {
+
+    dict.filter { d =>
+
+      val ptc = SpatialReasoning.toNvector(new Coordinate(d._2(longitude).toDouble, d._2(latitude).toDouble))
+
+      val singlePoint: Point = new GeometryFactory().createPoint(ptc)
+
+      val plan_traj = ExtraLogicReasoning.getFlightPlanTrajectory(d._2(aircraftId))
+
+      if (!plan_traj.isEmpty) {
+
+        if (DistanceOp.isWithinDistance(singlePoint, plan_traj, 5.0 / 6373)) false else true
+      } else false
+    }
+  }
+}
+
+case class NotAwayFromRoute(aircraftId: String, longitude:String, latitude:String) extends BodyClause {
+  override def replaceLabel(target: String, newLabel: String): NotAwayFromRoute = this
+
+  override def resolve(data: Execute.EventDB, dict: Iterable[Predicate.GroundingDict]): Iterable[Predicate.GroundingDict] = {
+
+    dict.filter { d =>
+
+      val ptc = SpatialReasoning.toNvector(new Coordinate(d._2(longitude).toDouble, d._2(latitude).toDouble))
+
+      val singlePoint: Point = new GeometryFactory().createPoint(ptc)
+
+      val plan_traj = ExtraLogicReasoning.getFlightPlanTrajectory(d._2(aircraftId))
+
+      if (!plan_traj.isEmpty) {
+
+        if (DistanceOp.isWithinDistance(singlePoint, plan_traj, 5.0 / 6373)) true else false
+      } else false
+    }
+  }
+}
+
+/* ====================== Aviation Domain ====================== */
 
 // happensAt
 case class HappensAtIE(id: InstantEventId, entity: Seq[String], time: String)
